@@ -2,7 +2,6 @@ import random
 import laspy
 import logging
 import numpy as np
-import pandas as pd
 import sklearn.cluster as sklearn
 from PIL import Image, ImageDraw
 
@@ -68,7 +67,6 @@ class PointCloud:
         # print("--------------------")
         # extracted_points = extracted_points.astype([('X', '<i4'), ('Y', '<i4'), ('Z', '<i4')]).view('<i4')
         # extracted_points = np.reshape(extracted_points, (-1, 3))
-        # extracted_points = f(extracted_points)
         # print(extracted_points)
 
         extracted_points = np.array([list((x[0] * self.scale_x, x[1] * self.scale_y, x[2] * self.scale_z)) for x in extracted_points])
@@ -81,13 +79,54 @@ class PointCloud:
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
         :return: Numpy array containing the cluster labels for each given input point
         """
-        # Finds the mean distance between points
-
+        # Finds the average distance between points
+        # logging.info(f"Calculating epsilon value for DBSCAN algorithm.")
+        # avg_dist = 0
+        # for i in range(len(self.points) - 1):
+        #     avg_dist += np.linalg.norm(self.points[i] - self.points[i + 1])
+        # avg_dist /= len(self.points)
+        # logging.info(f"Computed epsilon value : {avg_dist}")
 
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} ...")
-        self.clusters = sklearn.DBSCAN(eps=0.3, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
+        self.clusters = sklearn.DBSCAN(eps=0.8, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
+
+    def get_interesting_clusters(self, nb_clusters=5) -> []:
+        # TODO Checks if clusters where calculated
+
+        # Retrieves the biggest clusters
+        clusters_no_noise = self.clusters[self.clusters != -1]  # Removes noise
+        unique, counts = np.unique(clusters_no_noise, return_counts=True)
+        clusters_dict = dict(zip(unique, counts))
+        sorted_clusters = [k for k, v in sorted(clusters_dict.items(), key=lambda item: item[1], reverse=True)]
+
+        # Calculates clusters centers
+        cluster_centers = np.empty((min(nb_clusters, len(sorted_clusters)), 3))
+        for i in range(min(nb_clusters, len(sorted_clusters))):
+            indices = np.where(self.clusters == sorted_clusters[i])
+            center = np.array([0, 0, 0])
+            # Adds the coordinates
+            # TODO Errors with arrays operations
+            for j in indices:
+                print(self.points[0][0])
+                print(center[0] + self.points[j][0])
+                center[0] = center[0] + self.points[j][0]  # X
+                center[1] = center[1] + self.points[j][1]  # Y
+                center[2] = center[2] + self.points[j][2]  # Z
+
+            # Divides by total
+            center[0] = center[0] / len(indices)
+            center[1] = center[1] / len(indices)
+            center[2] = center[2] / len(indices)
+
+            # Adds the center to the array
+            np.append(cluster_centers, center)
+
+        for c in cluster_centers:
+            print(f"{c},")
+
+        return cluster_centers
 
     def generate_debug_image(self, width: int, height: int, zoom_level: int) -> Image:
         """
@@ -97,6 +136,8 @@ class PointCloud:
         :param zoom_level: The zoom level for debug image generation
         :return: None
         """
+
+        # TODO Checks if clusters where calculated
 
         def generate_color(seed: int) -> (int, int, int):
             """
@@ -119,6 +160,10 @@ class PointCloud:
 
         # Goes through each point and draws it on the picture
         for i, p in enumerate(self.points):
+            # Pass if noise
+            if self.clusters[i] == -1:
+                continue
+
             x = int(p[0] * zoom_level) + width / 2 - int(self.offset_x)
             y = int(p[1] * zoom_level) + height / 2 - int(self.offset_y)
 
