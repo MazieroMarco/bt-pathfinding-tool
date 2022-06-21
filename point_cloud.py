@@ -15,7 +15,7 @@ class PointCloud:
     offset_x: int  # The position offset of the point cloud on the X axis
     offset_y: int  # The position offset of the point cloud on the Y axis
     offset_z: int  # The position offset of the point cloud on the Z axis
-    points: np.ndarray  # The list of points shaped like [[x,y,z,r,g,b],...]
+    points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
 
     def __init__(self, filename: str, points_proportion: float = 0.5):
@@ -36,7 +36,6 @@ class PointCloud:
 
         # Reads the LAS file
         with laspy.open(filename) as file:
-            reader = file.read()
             self.nb_points = int(file.header.point_count * points_proportion)
             self.scale_x = file.header.x_scale
             self.scale_y = file.header.y_scale
@@ -44,31 +43,21 @@ class PointCloud:
             self.offset_x = file.header.x_offset * self.scale_x
             self.offset_y = file.header.x_offset * self.scale_y
             self.offset_z = file.header.x_offset * self.scale_z
-            self.points = self.__extract_points(reader)
+            self.points = self.__extract_points(file.read())
             file.close()
 
     def __extract_points(self, reader: laspy.LasData) -> np.ndarray:
         """
         Extract the (x,y,z) points contained inside the dataset
         :param reader: The point cloud reader opened from the file
-        :return: A numpy array containing arrays of coordinates for each point like so -> [[x,y,z,r,g,b],...]
+        :return: A numpy array containing arrays of coordinates for each point like so -> [[x,y,z],...]
         """
-        # Shuffles and selects only columns X,Y,Z and only the first nb_points (faster)
+        # Shuffles and selects only the first nb_points (faster)
         logging.info(f"Extracting {self.nb_points} points from file {self.filename}. This may take a while ...")
-        extracted_points = np.random.choice(reader.points.array, size=self.nb_points)[['X', 'Y', 'Z']]
+        rnd_indices = np.random.choice(len(reader.xyz), size=self.nb_points)
+        extracted_points = reader.xyz[rnd_indices]
 
-        # Converts [(),(),()] into [[],[],[]] to have a shape like (n,m) n=record, m=features (x,y,z)
-        # TODO This is very inefficient, need to find another way to do it
-
-        extracted_points = extracted_points.astype([('X', '<i4'), ('Y', '<i4'), ('Z', '<i4')]).view('<i4')
-        extracted_points = np.reshape(extracted_points, (-1, 3))
-        scaler_function = lambda coords: np.array([coords[0] * self.scale_x, coords[1] * self.scale_y, coords[2] * self.scale_z])
-        vectorized_scaler = np.vectorize(scaler_function)
-        extracted_points = scaler_function(extracted_points)
-
-        #extracted_points = np.array([list((x[0] * self.scale_x, x[1] * self.scale_y, x[2] * self.scale_z)) for x in extracted_points])
         logging.info(f"Successfully extracted {self.nb_points} from file {self.filename} !")
-
         return extracted_points
 
     def apply_dbscan(self) -> None:
@@ -99,7 +88,7 @@ class PointCloud:
         sorted_clusters = [k for k, v in sorted(clusters_dict.items(), key=lambda item: item[1], reverse=True)]
 
         # Calculates clusters centers
-        cluster_centers = np.empty((min(nb_clusters, len(sorted_clusters)), 3))
+        cluster_centers = np.zeros((min(nb_clusters, len(sorted_clusters)), 3))
         for i in range(min(nb_clusters, len(sorted_clusters))):
             indices = np.where(self.clusters == sorted_clusters[i])
             center_x = 0
@@ -109,7 +98,7 @@ class PointCloud:
             # TODO Errors with arrays operations
             for j in indices:
                 print("------------------")
-                print(self.points[j][0])
+                print(self.points.[j][0][0])
                 print(self.points[j][1])
                 print(self.points[j][2])
                 print("------------------")
@@ -141,7 +130,7 @@ class PointCloud:
         :return: None
         """
 
-        # TODO Checks if clusters where calculated
+        # TODO Verify if clusters where calculated
 
         def generate_color(seed: int) -> (int, int, int):
             """
