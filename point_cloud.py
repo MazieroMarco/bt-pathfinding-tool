@@ -60,16 +60,13 @@ class PointCloud:
         # Converts [(),(),()] into [[],[],[]] to have a shape like (n,m) n=record, m=features (x,y,z)
         # TODO This is very inefficient, need to find another way to do it
 
-        # def f(coords):
-        #     return np.array([coords[0] * self.scale_x, coords[1] * self.scale_y, coords[2] * self.scale_z])
-        #
-        # print(extracted_points)
-        # print("--------------------")
-        # extracted_points = extracted_points.astype([('X', '<i4'), ('Y', '<i4'), ('Z', '<i4')]).view('<i4')
-        # extracted_points = np.reshape(extracted_points, (-1, 3))
-        # print(extracted_points)
+        extracted_points = extracted_points.astype([('X', '<i4'), ('Y', '<i4'), ('Z', '<i4')]).view('<i4')
+        extracted_points = np.reshape(extracted_points, (-1, 3))
+        scaler_function = lambda coords: np.array([coords[0] * self.scale_x, coords[1] * self.scale_y, coords[2] * self.scale_z])
+        vectorized_scaler = np.vectorize(scaler_function)
+        extracted_points = scaler_function(extracted_points)
 
-        extracted_points = np.array([list((x[0] * self.scale_x, x[1] * self.scale_y, x[2] * self.scale_z)) for x in extracted_points])
+        #extracted_points = np.array([list((x[0] * self.scale_x, x[1] * self.scale_y, x[2] * self.scale_z)) for x in extracted_points])
         logging.info(f"Successfully extracted {self.nb_points} from file {self.filename} !")
 
         return extracted_points
@@ -105,23 +102,30 @@ class PointCloud:
         cluster_centers = np.empty((min(nb_clusters, len(sorted_clusters)), 3))
         for i in range(min(nb_clusters, len(sorted_clusters))):
             indices = np.where(self.clusters == sorted_clusters[i])
-            center = np.array([0, 0, 0])
+            center_x = 0
+            center_y = 0
+            center_z = 0
             # Adds the coordinates
             # TODO Errors with arrays operations
             for j in indices:
-                print(self.points[0][0])
-                print(center[0] + self.points[j][0])
-                center[0] = center[0] + self.points[j][0]  # X
-                center[1] = center[1] + self.points[j][1]  # Y
-                center[2] = center[2] + self.points[j][2]  # Z
+                print("------------------")
+                print(self.points[j][0])
+                print(self.points[j][1])
+                print(self.points[j][2])
+                print("------------------")
+
+                center_x += self.points[j][0]  # X
+                center_y += self.points[j][1]  # Y
+                center_z += self.points[j][2]  # Z
 
             # Divides by total
-            center[0] = center[0] / len(indices)
-            center[1] = center[1] / len(indices)
-            center[2] = center[2] / len(indices)
+            center_x /= len(indices)
+            center_y /= len(indices)
+            center_z /= len(indices)
 
             # Adds the center to the array
-            np.append(cluster_centers, center)
+            print((center_x, center_y, center_z))
+            np.append(cluster_centers, (center_x, center_y, center_z))
 
         for c in cluster_centers:
             print(f"{c},")
