@@ -1,9 +1,7 @@
 from point_cloud import PointCloud
 
 file = "data/construction_site.las"
-file = "data/example_quarry2_group1_densified_point_cloud.las"
+#file = "data/example_quarry2_group1_densified_point_cloud.las"
 pc = PointCloud(filename=file, points_proportion=0.1)
 pc.apply_dbscan()
-pc.write_path_output("output")
-#image = pc.generate_debug_image(width=2560, height=1440, zoom_level=5)
-#image.show()
+pc.write_path_output("output.json")

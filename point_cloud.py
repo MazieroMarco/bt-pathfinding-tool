@@ -117,21 +117,23 @@ class PointCloud:
     def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
         """
         Writes an JSON output file with the camera targets and positions that can be used in a visualization tool
-        :param json_output_file: The name of the output file (without the extension)
+        :param json_output_file: The name of the output file
         :param nb_points_of_interest: The number of wanted targets
         """
         # TODO Checks if clusters where calculated
         targets = self.__get_camera_targets(nb_points_of_interest)
         positions = self.__get_camera_positions(targets)
 
-        # Defines the dictionnary object with positions and targets
+        # Defines the dictionary object with positions and targets
         data = {
             "positions": positions.tolist(),
             "targets": targets.tolist()
         }
 
-        with open(json_output_file + '.json', 'w') as outfile:
+        with open(json_output_file, 'w') as outfile:
             json.dump(data, outfile)
+
+        logging.info(f"Camera targets and positions were saved in file {json_output_file}")
 
     def generate_debug_image(self, width: int, height: int, zoom_level: int) -> Image:
         """
