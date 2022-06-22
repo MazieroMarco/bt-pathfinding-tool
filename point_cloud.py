@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import sklearn.cluster as sklearn
 from PIL import Image, ImageDraw
+import json
 
 
 class PointCloud:
@@ -60,6 +61,41 @@ class PointCloud:
         logging.info(f"Successfully extracted {self.nb_points} from file {self.filename} !")
         return extracted_points
 
+    def __get_camera_targets(self, nb_clusters) -> np.ndarray:
+        """
+        Calculates the average position of all the points contained in the computed clusters
+        :param nb_clusters: The number of clusters to get
+        :return: An array containing the x,y,z values for each cluster center
+        """
+        # TODO Checks if clusters where calculated
+
+        # Retrieves the biggest clusters
+        clusters_no_noise = self.clusters[self.clusters != -1]  # Removes noise
+        unique, counts = np.unique(clusters_no_noise, return_counts=True)
+        clusters_dict = dict(zip(unique, counts))
+        sorted_clusters = [k for k, v in sorted(clusters_dict.items(), key=lambda item: item[1], reverse=True)]
+
+        # Calculates clusters centers
+        cluster_centers = np.empty((0, 3))
+        for i in range(min(nb_clusters, len(sorted_clusters))):
+            indices = np.where(self.clusters == sorted_clusters[i])
+            cluster_average = np.mean(self.points[indices], axis=0)
+
+            # Adds the center to the array
+            cluster_centers = np.append(cluster_centers, np.array([cluster_average]), axis=0)
+
+        return cluster_centers
+
+    @staticmethod
+    def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
+        def randomize_position(pos):
+            pos[0] += (random.random() - 0.5) * 150  # X
+            pos[1] += (random.random() - 0.5) * 150  # Y
+            pos[2] += random.random() * 40           # Z
+            return pos
+
+        return randomize_position(camera_targets)
+
     def apply_dbscan(self) -> None:
         """
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
@@ -78,48 +114,24 @@ class PointCloud:
         self.clusters = sklearn.DBSCAN(eps=0.8, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
-    def get_interesting_clusters(self, nb_clusters=5) -> []:
+    def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
+        """
+        Writes an JSON output file with the camera targets and positions that can be used in a visualization tool
+        :param json_output_file: The name of the output file (without the extension)
+        :param nb_points_of_interest: The number of wanted targets
+        """
         # TODO Checks if clusters where calculated
+        targets = self.__get_camera_targets(nb_points_of_interest)
+        positions = self.__get_camera_positions(targets)
 
-        # Retrieves the biggest clusters
-        clusters_no_noise = self.clusters[self.clusters != -1]  # Removes noise
-        unique, counts = np.unique(clusters_no_noise, return_counts=True)
-        clusters_dict = dict(zip(unique, counts))
-        sorted_clusters = [k for k, v in sorted(clusters_dict.items(), key=lambda item: item[1], reverse=True)]
+        # Defines the dictionnary object with positions and targets
+        data = {
+            "positions": positions.tolist(),
+            "targets": targets.tolist()
+        }
 
-        # Calculates clusters centers
-        cluster_centers = np.zeros((min(nb_clusters, len(sorted_clusters)), 3))
-        for i in range(min(nb_clusters, len(sorted_clusters))):
-            indices = np.where(self.clusters == sorted_clusters[i])
-            center_x = 0
-            center_y = 0
-            center_z = 0
-            # Adds the coordinates
-            # TODO Errors with arrays operations
-            for j in indices:
-                print("------------------")
-                print(self.points.[j][0][0])
-                print(self.points[j][1])
-                print(self.points[j][2])
-                print("------------------")
-
-                center_x += self.points[j][0]  # X
-                center_y += self.points[j][1]  # Y
-                center_z += self.points[j][2]  # Z
-
-            # Divides by total
-            center_x /= len(indices)
-            center_y /= len(indices)
-            center_z /= len(indices)
-
-            # Adds the center to the array
-            print((center_x, center_y, center_z))
-            np.append(cluster_centers, (center_x, center_y, center_z))
-
-        for c in cluster_centers:
-            print(f"{c},")
-
-        return cluster_centers
+        with open(json_output_file + '.json', 'w') as outfile:
+            json.dump(data, outfile)
 
     def generate_debug_image(self, width: int, height: int, zoom_level: int) -> Image:
         """
