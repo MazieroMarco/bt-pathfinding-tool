@@ -2,6 +2,7 @@ import random
 import laspy
 import logging
 import numpy as np
+from datetime import datetime
 import sklearn.cluster as sklearn
 from PIL import Image, ImageDraw
 import json
@@ -88,13 +89,15 @@ class PointCloud:
 
     @staticmethod
     def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
+        random.seed(datetime.now().timestamp())
+
         def randomize_position(pos):
             pos[0] += (random.random() - 0.5) * 150  # X
             pos[1] += (random.random() - 0.5) * 150  # Y
-            pos[2] += random.random() * 40           # Z
+            pos[2] += random.random() * 60           # Z
             return pos
 
-        return randomize_position(camera_targets)
+        return np.array([randomize_position([t[0], t[1], t[2]]) for t in camera_targets])
 
     def apply_dbscan(self) -> None:
         """
@@ -122,7 +125,7 @@ class PointCloud:
         """
         # TODO Checks if clusters where calculated
         targets = self.__get_camera_targets(nb_points_of_interest)
-        positions = self.__get_camera_positions(targets)
+        positions = PointCloud.__get_camera_positions(targets)
 
         # Defines the dictionary object with positions and targets
         data = {
