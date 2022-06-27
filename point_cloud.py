@@ -3,8 +3,10 @@ import laspy
 import logging
 import numpy as np
 from datetime import datetime
-import sklearn.cluster as sklearn
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
+from matplotlib import pyplot as plt
 import json
 
 
@@ -87,6 +89,30 @@ class PointCloud:
 
         return cluster_centers
 
+    def get_epsilon(self):
+        # TODO
+        logging.info(f"Finding the best parameters for clustering ...")
+
+        neigh = NearestNeighbors(n_neighbors=2)
+        nbrs = neigh.fit(self.points)
+        distances, indices = nbrs.kneighbors(self.points)
+        distances = np.sort(distances, axis=0)
+        distances = distances[:, 1]
+        plt.plot(distances)
+        plt.show()
+
+        # defining polynomial function
+        var = np.poly1d
+        print("Polynomial function, f(x):\n", var)
+
+        # calculating the derivative
+        derivative = var.deriv()
+        print("Derivative, f(x)'=\n", derivative)
+
+        # calculates the derivative of after
+        # given value of x
+        print("When x=3  f(x)'=", derivative(3))
+
     @staticmethod
     def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
         random.seed(datetime.now().timestamp())
@@ -114,7 +140,7 @@ class PointCloud:
 
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} ...")
-        self.clusters = sklearn.DBSCAN(eps=0.8, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
+        self.clusters = DBSCAN(eps=0.8, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
     def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
