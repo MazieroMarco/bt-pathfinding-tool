@@ -93,25 +93,58 @@ class PointCloud:
         # TODO
         logging.info(f"Finding the best parameters for clustering ...")
 
-        neigh = NearestNeighbors(n_neighbors=2)
-        nbrs = neigh.fit(self.points)
-        distances, indices = nbrs.kneighbors(self.points)
-        distances = np.sort(distances, axis=0)
-        distances = distances[:, 1]
-        plt.plot(distances)
+        #data = np.array([[1, 2], [1, 7], [2, 4], [3, 3],[5, 1], [6, 5]])
+        data = self.points
+        dks = np.empty(1)
+        dks = np.append(dks, PointCloud.get_dks(data, 20))
+        print(f"Calculated Dk for k = {20}")
+
+        x = np.array(range(21))
+        y = dks
+        #fitting = np.polyfit(x=x, y=y, deg=6)
+
+        coef1 = np.polyfit(x, y, 0)
+        y1 = np.polyval(coef1, x)
+        plt.plot(x, y, '.')
+        coef3 = np.polyfit(x, y, 2)
+        y3 = np.polyval(coef3, x)
+        #derivative = np.polyder(y3)
+        #print(derivative)
+        plt.plot(x, y3)
+        x_der, y_der = PointCloud.first_derivative(x, y3)
+        id_closest_to_one = PointCloud.find_closest_element_index(y_der, 0.01)
+        dk_closest_to_der = y3[id_closest_to_one]
         plt.show()
+        return dk_closest_to_der - 0.5
 
-        # defining polynomial function
-        var = np.poly1d
-        print("Polynomial function, f(x):\n", var)
+    @staticmethod
+    def get_dks(data, k):
+        neigh = NearestNeighbors(n_neighbors=k)
+        nbrs = neigh.fit(data)
+        distances, _ = nbrs.kneighbors(data)
+        d_maxis = np.sort(distances, axis=1)
+        averages = np.average(d_maxis, axis=0)
+        return averages
 
-        # calculating the derivative
-        derivative = var.deriv()
-        print("Derivative, f(x)'=\n", derivative)
+    @staticmethod
+    def first_derivative(x_data, y_data):
+        y_prime = np.diff(y_data) / np.diff(x_data)
+        x_prime = np.array([])
+        for i in range(len(y_prime)):
+            x_temp = (x_data[i+1] + x_data[i]) / 2
+            x_prime = np.append(x_prime, x_temp)
 
-        # calculates the derivative of after
-        # given value of x
-        print("When x=3  f(x)'=", derivative(3))
+        print(x_prime)
+        print(y_prime)
+        plt.plot(x_prime, y_prime)
+
+        return x_prime, y_prime
+
+    @staticmethod
+    def find_closest_element_index(arr, element):
+        difference_array = np.absolute(arr - element)
+        index = difference_array.argmin()
+        return index
 
     @staticmethod
     def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
@@ -125,7 +158,7 @@ class PointCloud:
 
         return np.array([randomize_position([t[0], t[1], t[2]]) for t in camera_targets])
 
-    def apply_dbscan(self) -> None:
+    def apply_dbscan(self, epsilon) -> None:
         """
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
         :return: Numpy array containing the cluster labels for each given input point
@@ -140,7 +173,7 @@ class PointCloud:
 
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} ...")
-        self.clusters = DBSCAN(eps=0.8, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
+        self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
     def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
