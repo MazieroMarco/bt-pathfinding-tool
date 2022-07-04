@@ -1,4 +1,4 @@
-from point_cloud import PointCloud
+from pathfinder import PointCloud
 
 #file = "data/construction_site.las"
 file = "data/example_quarry2_group1_densified_point_cloud.las"

@@ -1,3 +1,5 @@
+import os
+import pathlib
 import random
 import laspy
 import logging
@@ -8,6 +10,7 @@ from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
 import json
+import argparse
 
 
 class PointCloud:
@@ -61,7 +64,7 @@ class PointCloud:
         rnd_indices = np.random.choice(len(reader.xyz), size=self.nb_points)
         extracted_points = reader.xyz[rnd_indices]
 
-        logging.info(f"Successfully extracted {self.nb_points} from file {self.filename} !")
+        logging.info(f"Successfully extracted {self.nb_points} points from file {self.filename} !")
         return extracted_points
 
     def __get_camera_targets(self, nb_clusters) -> np.ndarray:
@@ -87,11 +90,12 @@ class PointCloud:
             # Adds the center to the array
             cluster_centers = np.append(cluster_centers, np.array([cluster_average]), axis=0)
 
+        logging.info(f"{nb_clusters} points of interest have been computed.")
         return cluster_centers
 
     def get_epsilon(self):
         # TODO
-        logging.info(f"Finding the best parameters for clustering ...")
+        logging.info(f"Finding the best parameters for clustering. This may take a while ...")
 
         #data = np.array([[1, 2], [1, 7], [2, 4], [3, 3],[5, 1], [6, 5]])
         data = self.points
@@ -114,8 +118,8 @@ class PointCloud:
         x_der, y_der = PointCloud.first_derivative(x, y3)
         id_closest_to_one = PointCloud.find_closest_element_index(y_der, 0.01)
         dk_closest_to_der = y3[id_closest_to_one]
-        plt.show()
-        return dk_closest_to_der - 0.5
+        #plt.show()
+        return dk_closest_to_der - 0.05
 
     @staticmethod
     def get_dks(data, k):
@@ -156,6 +160,8 @@ class PointCloud:
             pos[2] += random.random() * 60           # Z
             return pos
 
+        logging.info(f"{len(camera_targets)} camera positions have been computed.")
+
         return np.array([randomize_position([t[0], t[1], t[2]]) for t in camera_targets])
 
     def apply_dbscan(self, epsilon) -> None:
@@ -163,16 +169,8 @@ class PointCloud:
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
         :return: Numpy array containing the cluster labels for each given input point
         """
-        # Finds the average distance between points
-        # logging.info(f"Calculating epsilon value for DBSCAN algorithm.")
-        # avg_dist = 0
-        # for i in range(len(self.points) - 1):
-        #     avg_dist += np.linalg.norm(self.points[i] - self.points[i + 1])
-        # avg_dist /= len(self.points)
-        # logging.info(f"Computed epsilon value : {avg_dist}")
-
         # Applies DBSCAN on the points
-        logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} ...")
+        logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} with epsilon of {epsilon} ...")
         self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
@@ -245,3 +243,36 @@ class PointCloud:
 
         logging.info(f"The picture was successfully created !")
         return output_img
+
+
+if __name__ == "__main__" :
+    def dir_path(s):
+        """
+        Ensures the given string is a valid file path
+        :param s: The string to check
+        :return: The string if valid. Otherwise, an error
+        """
+        if os.path.exists(s) or os.access(os.path.dirname(s), os.W_OK):
+            return s
+        else:
+            raise NotADirectoryError(s)
+
+    # Sets up the arguments parser
+    parser = argparse.ArgumentParser(description="Finds interesting locations and a camera path inside a given LAS point cloud data file.")
+    parser.add_argument("input", type=dir_path, metavar="INPUT", help="The path of the input LAS data file")
+    parser.add_argument("--output", "-o", type=dir_path, metavar="DIR", default="./pathfinder_output.json", help="The output directory for the generated JSON file")
+    parser.add_argument("--poi", "-p", type=int, metavar="N", default=5, help="The amount of points of interest to output")
+    parser.add_argument("--quantity", "-q", type=float, metavar="N", default=0.1, help="The proportion of points to keep in the working data sample [0 < q < 1]. Warning, a big number slows down the algorithm.")
+
+    arguments = parser.parse_args()
+    if not 0 < arguments.quantity <= 1:
+        arguments.quantity = 0.1
+
+    print(f"QTY: {arguments.quantity}")
+
+
+    # Executes the pathfinding algorithm
+    pc = PointCloud(filename=arguments.input, points_proportion=arguments.quantity)
+    epsilon = pc.get_epsilon()
+    pc.apply_dbscan(epsilon)
+    pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
