@@ -24,6 +24,7 @@ class PointCloud:
     offset_z: int  # The position offset of the point cloud on the Z axis
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
+    clusters_computed: bool  # Boolean that tells if the clusters where computed by the algorithm
 
     def __init__(self, filename: str, points_proportion: float = 0.5):
         """
@@ -40,6 +41,9 @@ class PointCloud:
         # Validates the input
         if 0 > points_proportion > 1:
             raise ValueError("points_proportion must be between 0 and 1")
+
+        # Initiates the clusters boolean
+        self.clusters_computed = False
 
         # Reads the LAS file
         with laspy.open(filename) as file:
@@ -73,7 +77,9 @@ class PointCloud:
         :param nb_clusters: The number of clusters to get
         :return: An array containing the x,y,z values for each cluster center
         """
-        # TODO Checks if clusters where calculated
+
+        # Checks if clusters where computed
+        self.__verify_clusters_computed()
 
         # Retrieves the biggest clusters
         clusters_no_noise = self.clusters[self.clusters != -1]  # Removes noise
@@ -94,61 +100,51 @@ class PointCloud:
         return cluster_centers
 
     def get_epsilon(self):
-        # TODO
         logging.info(f"Finding the best parameters for clustering. This may take a while ...")
 
-        #data = np.array([[1, 2], [1, 7], [2, 4], [3, 3],[5, 1], [6, 5]])
+        # Config values
+        k = 20  # The number of neighbors to evaluate (the bigger, the slower)
+        deriv_goal = 0.01  # The ideal value for the derivative
+        corr_factor = -0.05  # The correction factor to apply to the final value
+
+        # Calculates maximum distances average for KNN neighbors
         data = self.points
-        dks = np.empty(1)
-        dks = np.append(dks, PointCloud.get_dks(data, 20))
-        print(f"Calculated Dk for k = {20}")
+        dks = np.array([0])  # The first 0 value corresponds to the dk when k = 0 (no neighbors)
+        neighbors = NearestNeighbors(n_neighbors=k).fit(data)
+        distances, _ = neighbors.kneighbors(data)  # Find distances up to K neighbors
+        d_maxis = np.sort(distances, axis=1)  # Sort distances from closest to farthest
+        averages = np.average(d_maxis, axis=0)  # Calculates average distances for all columns
+        dks = np.append(dks, averages)  # Appends the distances to the dks array
 
-        x = np.array(range(21))
-        y = dks
-        #fitting = np.polyfit(x=x, y=y, deg=6)
+        # Set up the values
+        x = np.array(range(k+1))  # X-axis contains the K values (0 - K)
+        y = dks  # Y-axis contains the dk averages for each K value
 
-        coef1 = np.polyfit(x, y, 0)
-        y1 = np.polyval(coef1, x)
-        plt.plot(x, y, '.')
-        coef3 = np.polyfit(x, y, 2)
-        y3 = np.polyval(coef3, x)
-        #derivative = np.polyder(y3)
-        #print(derivative)
-        plt.plot(x, y3)
-        x_der, y_der = PointCloud.first_derivative(x, y3)
-        id_closest_to_one = PointCloud.find_closest_element_index(y_der, 0.01)
-        dk_closest_to_der = y3[id_closest_to_one]
-        #plt.show()
-        return dk_closest_to_der - 0.05
+        # Calculates the fitting function of dks
+        fit_coef = np.polyfit(x, y, 2)
+        y_fit = np.polyval(fit_coef, x)
 
-    @staticmethod
-    def get_dks(data, k):
-        neigh = NearestNeighbors(n_neighbors=k)
-        nbrs = neigh.fit(data)
-        distances, _ = nbrs.kneighbors(data)
-        d_maxis = np.sort(distances, axis=1)
-        averages = np.average(d_maxis, axis=0)
-        return averages
+        # Calculates the derivative values of the fitting function
+        y_der = np.diff(y_fit) / np.diff(x)
+        x_der = np.array([])
+        for i in range(len(y_der)):
+            x_temp = (x[i + 1] + x[i]) / 2
+            x_der = np.append(x_der, x_temp)
 
-    @staticmethod
-    def first_derivative(x_data, y_data):
-        y_prime = np.diff(y_data) / np.diff(x_data)
-        x_prime = np.array([])
-        for i in range(len(y_prime)):
-            x_temp = (x_data[i+1] + x_data[i]) / 2
-            x_prime = np.append(x_prime, x_temp)
+        # Finds the value where the derivative is closest to the derivative goal
+        difference_array = np.absolute(y_der - deriv_goal)  # Finds the closest value to 0.01
+        id_closest_to_one = difference_array.argmin()
 
-        print(x_prime)
-        print(y_prime)
-        plt.plot(x_prime, y_prime)
+        # Retrieves the dk value where the derivative is close to the derivative goal
+        dk_closest_to_der = y_fit[id_closest_to_one] + corr_factor
 
-        return x_prime, y_prime
+        # Plotting for visual observation and debug
+        # plt.plot(x, y, '.')
+        # plt.plot(x, y_fit)
+        # plt.plot(x_der, y_der)
+        # plt.show()
 
-    @staticmethod
-    def find_closest_element_index(arr, element):
-        difference_array = np.absolute(arr - element)
-        index = difference_array.argmin()
-        return index
+        return dk_closest_to_der
 
     @staticmethod
     def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
@@ -164,6 +160,14 @@ class PointCloud:
 
         return np.array([randomize_position([t[0], t[1], t[2]]) for t in camera_targets])
 
+    def __verify_clusters_computed(self):
+        """
+        Checks if clusters where computed
+        :return: False if the clusters where not computed
+        """
+        if not self.clusters_computed:
+            raise RuntimeError("The clusters are not computed, please apply the clustering algorithm.")
+
     def apply_dbscan(self, epsilon) -> None:
         """
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
@@ -172,6 +176,7 @@ class PointCloud:
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} with epsilon of {epsilon} ...")
         self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
+        self.clusters_computed = True
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
     def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
@@ -180,7 +185,9 @@ class PointCloud:
         :param json_output_file: The name of the output file
         :param nb_points_of_interest: The number of wanted targets
         """
-        # TODO Checks if clusters where calculated
+        # Checks if clusters where computed
+        self.__verify_clusters_computed()
+
         targets = self.__get_camera_targets(nb_points_of_interest)
         positions = PointCloud.__get_camera_positions(targets)
 
@@ -204,7 +211,8 @@ class PointCloud:
         :return: None
         """
 
-        # TODO Verify if clusters where calculated
+        # Checks if clusters where computed
+        self.__verify_clusters_computed()
 
         def generate_color(seed: int) -> (int, int, int):
             """
@@ -267,9 +275,6 @@ if __name__ == "__main__" :
     arguments = parser.parse_args()
     if not 0 < arguments.quantity <= 1:
         arguments.quantity = 0.1
-
-    print(f"QTY: {arguments.quantity}")
-
 
     # Executes the pathfinding algorithm
     pc = PointCloud(filename=arguments.input, points_proportion=arguments.quantity)
