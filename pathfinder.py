@@ -5,6 +5,7 @@ import laspy
 import logging
 import numpy as np
 from datetime import datetime
+import sklearn.preprocessing
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
@@ -23,8 +24,10 @@ class PointCloud:
     offset_y: int  # The position offset of the point cloud on the Y axis
     offset_z: int  # The position offset of the point cloud on the Z axis
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
+    colors: np.ndarray  # The list of points colors shaped like [[r,g,b],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
     clusters_computed: bool  # Boolean that tells if the clusters where computed by the algorithm
+    normalized: np.ndarray
 
     def __init__(self, filename: str, points_proportion: float = 0.5):
         """
@@ -54,22 +57,39 @@ class PointCloud:
             self.offset_x = file.header.x_offset * self.scale_x
             self.offset_y = file.header.x_offset * self.scale_y
             self.offset_z = file.header.x_offset * self.scale_z
-            self.points = self.__extract_points(file.read())
+            data = self.__extract_points(file.read())
+            self.points = data[0]
+            self.colors = data[1]
             file.close()
 
-    def __extract_points(self, reader: laspy.LasData) -> np.ndarray:
+    def __extract_points(self, reader: laspy.LasData) -> (np.ndarray, np.ndarray):
         """
-        Extract the (x,y,z) points contained inside the dataset
+        Extract the (x,y,z) points contained inside the dataset and the (r,g,b) corresponding colors
         :param reader: The point cloud reader opened from the file
-        :return: A numpy array containing arrays of coordinates for each point like so -> [[x,y,z],...]
+        :return: A tuple containing x,y,z values and r,g,b values for each point
         """
         # Shuffles and selects only the first nb_points (faster)
         logging.info(f"Extracting {self.nb_points} points from file {self.filename}. This may take a while ...")
         rnd_indices = np.random.choice(len(reader.xyz), size=self.nb_points)
         extracted_points = reader.xyz[rnd_indices]
+        extracted_colors = reader.points.array[rnd_indices][["red", "green", "blue"]]
+        extracted_colors = [[r, g, b] for r, g, b in extracted_colors]
+
+        # Normalizes the RGB values according to XYZ values
+        x_max = np.max(extracted_points[:, 0])
+        y_max = np.max(extracted_points[:, 1])
+        z_max = np.max(extracted_points[:, 2])
+        xyz_max = np.average([x_max, y_max, z_max])
+        rgb_max = 2 ** 16  # Maximum color value
+        ratio = xyz_max / rgb_max
+        print(xyz_max)
+        print(rgb_max)
+        normalized_rgb = [[r * ratio, g * ratio, b * ratio] for r, g, b in extracted_colors]
+        print(normalized_rgb)
+        self.normalized = np.concatenate((extracted_points, normalized_rgb), axis=0)
 
         logging.info(f"Successfully extracted {self.nb_points} points from file {self.filename} !")
-        return extracted_points
+        return extracted_points, extracted_colors
 
     def __get_camera_targets(self, nb_clusters) -> np.ndarray:
         """
@@ -91,7 +111,7 @@ class PointCloud:
         cluster_centers = np.empty((0, 3))
         for i in range(min(nb_clusters, len(sorted_clusters))):
             indices = np.where(self.clusters == sorted_clusters[i])
-            cluster_average = np.mean(self.points[indices], axis=0)
+            cluster_average = np.mean(self.normalized[indices], axis=0)
 
             # Adds the center to the array
             cluster_centers = np.append(cluster_centers, np.array([cluster_average]), axis=0)
@@ -106,9 +126,9 @@ class PointCloud:
         k = 20  # The number of neighbors to evaluate (the bigger, the slower)
         deriv_goal = 0.01  # The ideal value for the derivative
         corr_factor = -0.05  # The correction factor to apply to the final value
+        data = self.normalized
 
         # Calculates maximum distances average for KNN neighbors
-        data = self.points
         dks = np.array([0])  # The first 0 value corresponds to the dk when k = 0 (no neighbors)
         neighbors = NearestNeighbors(n_neighbors=k).fit(data)
         distances, _ = neighbors.kneighbors(data)  # Find distances up to K neighbors
@@ -175,7 +195,7 @@ class PointCloud:
         """
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} with epsilon of {epsilon} ...")
-        self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(np.array(self.points))
+        self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(self.normalized)
         self.clusters_computed = True
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
@@ -244,6 +264,9 @@ class PointCloud:
 
             # Gets the cluster color
             r, g, b = generate_color(self.clusters[i])
+            #r = int(r * 255 / 2**16)
+            #g = int(g * 255 / 2**16)
+            #b = int(b * 255 / 2**16)
 
             # Draws the point
             if 0 <= x < width and 0 <= y < height:
@@ -281,3 +304,6 @@ if __name__ == "__main__" :
     epsilon = pc.get_epsilon()
     pc.apply_dbscan(epsilon)
     pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
+
+    img = pc.generate_debug_image(2560, 1440, 5)
+    img.show()
