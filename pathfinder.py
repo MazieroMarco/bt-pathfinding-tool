@@ -5,12 +5,15 @@ import laspy
 import logging
 import numpy as np
 from datetime import datetime
+import copy
+import scipy.spatial
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
 import json
 import argparse
+from mathutils import Vector
 
 
 class PointCloud:
@@ -24,6 +27,7 @@ class PointCloud:
     offset_z: int  # The position offset of the point cloud on the Z axis
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
+    opt_epsilon: float  # Optimal epsilon value computed by the algorithm
     clusters_computed: bool  # Boolean that tells if the clusters where computed by the algorithm
 
     def __init__(self, filename: str, points_proportion: float = 0.5):
@@ -42,7 +46,8 @@ class PointCloud:
         if 0 > points_proportion > 1:
             raise ValueError("points_proportion must be between 0 and 1")
 
-        # Initiates the clusters boolean
+        # Initiates the clusters boolean and epsilon value
+        self.opt_epsilon = None
         self.clusters_computed = False
 
         # Reads the LAS file
@@ -96,11 +101,24 @@ class PointCloud:
             # Adds the center to the array
             cluster_centers = np.append(cluster_centers, np.array([cluster_average]), axis=0)
 
+        # Sort targets by euclidian distance to avoid long movements with camera
+        sorted_centers = np.empty((0, 3))
+        sorted_centers = np.append(sorted_centers, np.array([cluster_centers[0]]), axis=0)
+        cluster_centers = np.array(cluster_centers[cluster_centers != np.array(sorted_centers[0])]).reshape((-1, 3))
+        while len(cluster_centers) != 0:
+            tree = scipy.spatial.KDTree(cluster_centers)
+            closest_center = cluster_centers[tree.query(sorted_centers[-1])[1]]
+            sorted_centers = np.append(sorted_centers, np.array([closest_center]), axis=0)
+            cluster_centers = np.array(cluster_centers[cluster_centers != np.array(closest_center)]).reshape((-1, 3))
+
         logging.info(f"{nb_clusters} points of interest have been computed.")
-        return cluster_centers
+        return sorted_centers
 
     def get_epsilon(self):
         logging.info(f"Finding the best parameters for clustering. This may take a while ...")
+
+        if self.opt_epsilon is not None:
+            return self.opt_epsilon
 
         # Config values
         k = 20  # The number of neighbors to evaluate (the bigger, the slower)
@@ -144,21 +162,58 @@ class PointCloud:
         # plt.plot(x_der, y_der)
         # plt.show()
 
+        self.opt_epsilon = dk_closest_to_der
         return dk_closest_to_der
 
-    @staticmethod
-    def __get_camera_positions(camera_targets: np.ndarray) -> np.ndarray:
+    def __get_camera_positions(self, camera_targets: np.ndarray) -> np.ndarray:
         random.seed(datetime.now().timestamp())
 
-        def randomize_position(pos):
+        positions = np.empty((0, 3))  # The array containing the final camera positions
+        data = self.points  # The data to use for the KDTree
+        tree = scipy.spatial.KDTree(data)  # The KD tree to compute KNN distances
+
+        # Goes through each target
+        target_index = 0
+        while True:
+            # Retrieves the current target
+            t = camera_targets[target_index]
+
+            # Generates random camera position
+            pos = np.array([t[0], t[1], t[2]])
             pos[0] += (random.random() - 0.5) * 150  # X
             pos[1] += (random.random() - 0.5) * 150  # Y
-            pos[2] += random.random() * 60           # Z
-            return pos
+            pos[2] += random.random() * 60  # Z
+
+            # Lerps through the vector between position and target
+            v1 = Vector((pos[0], pos[1], pos[2]))
+            v2 = Vector((t[0], t[1], t[2]))
+
+            # Checks for occlusion
+            is_occlusion = False
+            for i in np.arange(0, 0.8, 0.1):
+                interp_pos = v1.lerp(v2, i)
+
+                # Uses KNN to check if there are points around
+                distance, _ = tree.query(interp_pos)
+                if distance < self.opt_epsilon * 5:
+                    is_occlusion = True
+                    break
+
+            # Decides to break or continue the loop
+            if is_occlusion:
+                continue
+
+            target_index += 1
+            positions = np.append(positions, np.array([pos]), axis=0)
+
+            if target_index >= len(camera_targets):
+                break
+            else:
+                continue
 
         logging.info(f"{len(camera_targets)} camera positions have been computed.")
 
-        return np.array([randomize_position([t[0], t[1], t[2]]) for t in camera_targets])
+        return positions
 
     def __verify_clusters_computed(self):
         """
@@ -189,7 +244,7 @@ class PointCloud:
         self.__verify_clusters_computed()
 
         targets = self.__get_camera_targets(nb_points_of_interest)
-        positions = PointCloud.__get_camera_positions(targets)
+        positions = self.__get_camera_positions(targets)
 
         # Defines the dictionary object with positions and targets
         data = {
