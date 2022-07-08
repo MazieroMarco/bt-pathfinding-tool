@@ -1,6 +1,8 @@
 import os
 import pathlib
 import random
+import math
+
 import laspy
 import logging
 import numpy as np
@@ -12,6 +14,7 @@ from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
 import json
 import argparse
+import colorsys
 
 
 class PointCloud:
@@ -68,25 +71,38 @@ class PointCloud:
         :param reader: The point cloud reader opened from the file
         :return: A tuple containing x,y,z values and r,g,b values for each point
         """
+        def rgb_to_coords(r, g, b):
+            hue, saturation, value = colorsys.rgb_to_hsv(r, g, b)
+            picker_width = 1000
+            radius = 500
+            color_radius = saturation * radius
+            angle = (1 - hue) * (2 * math.pi)
+            mid_x = picker_width / 2
+            mid_y = picker_width / 2
+            x_offset = math.cos(angle) * color_radius
+            y_offset = math.sin(angle) * color_radius
+            return mid_x + x_offset, mid_y + y_offset, 0
+
+
         # Shuffles and selects only the first nb_points (faster)
         logging.info(f"Extracting {self.nb_points} points from file {self.filename}. This may take a while ...")
         rnd_indices = np.random.choice(len(reader.xyz), size=self.nb_points)
         extracted_points = reader.xyz[rnd_indices]
         extracted_colors = reader.points.array[rnd_indices][["red", "green", "blue"]]
-        extracted_colors = [[r, g, b] for r, g, b in extracted_colors]
+        #extracted_colors = np.array([[r * 256 // 2**16, g * 256 // 2**16, b * 256 // 2**16] for r, g, b in extracted_colors])
+        extracted_colors = np.array([[r / 2**16, g / 2**16, b / 2**16] for r, g, b in extracted_colors])
 
         # Normalizes the RGB values according to XYZ values
-        x_max = np.max(extracted_points[:, 0])
-        y_max = np.max(extracted_points[:, 1])
-        z_max = np.max(extracted_points[:, 2])
+        x_max = reader.header.x_max
+        y_max = reader.header.y_max
+        z_max = reader.header.z_max
         xyz_max = np.average([x_max, y_max, z_max])
-        rgb_max = 2 ** 16  # Maximum color value
+        rgb_max = 255  # Maximum color value
         ratio = xyz_max / rgb_max
-        print(xyz_max)
-        print(rgb_max)
-        normalized_rgb = [[r * ratio, g * ratio, b * ratio] for r, g, b in extracted_colors]
-        print(normalized_rgb)
-        self.normalized = np.concatenate((extracted_points, normalized_rgb), axis=0)
+        #normalized_rgb = [[r * ratio, g * ratio, b * ratio] for r, g, b in extracted_colors]
+        normalized_xyz = [[x / x_max, y / y_max, z / z_max] for x, y, z in extracted_points]
+        self.normalized = np.concatenate((normalized_xyz, extracted_colors), axis=1)
+        print(self.normalized[:, [0, 1, 2]])
 
         logging.info(f"Successfully extracted {self.nb_points} points from file {self.filename} !")
         return extracted_points, extracted_colors
@@ -111,7 +127,7 @@ class PointCloud:
         cluster_centers = np.empty((0, 3))
         for i in range(min(nb_clusters, len(sorted_clusters))):
             indices = np.where(self.clusters == sorted_clusters[i])
-            cluster_average = np.mean(self.normalized[indices], axis=0)
+            cluster_average = np.mean(self.points[indices], axis=0)
 
             # Adds the center to the array
             cluster_centers = np.append(cluster_centers, np.array([cluster_average]), axis=0)
@@ -125,8 +141,8 @@ class PointCloud:
         # Config values
         k = 20  # The number of neighbors to evaluate (the bigger, the slower)
         deriv_goal = 0.01  # The ideal value for the derivative
-        corr_factor = -0.05  # The correction factor to apply to the final value
-        data = self.normalized
+        corr_factor = 0.05  # The correction factor to apply to the final value
+        data = self.normalized[:, [0, 1, 2]]
 
         # Calculates maximum distances average for KNN neighbors
         dks = np.array([0])  # The first 0 value corresponds to the dk when k = 0 (no neighbors)
