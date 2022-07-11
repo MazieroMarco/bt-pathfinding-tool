@@ -163,16 +163,16 @@ class PointCloud:
         dk_closest_to_der = y_fit[id_closest_to_one] + corr_factor
 
         # Plotting for visual observation and debug
-        plt.plot(x, y, ".", label='Dmax average')
-        plt.plot(x, y_fit, label='Fitting function')
-        plt.plot(y_der / 10, label='Derivative values')
-        plt.xticks(x)
-        plt.title("Average of maximum distances by number of neighbors")
-        plt.xlabel("Number of neighbors (K)")
-        plt.ylabel("Average of maximum distances (Dmax)")
-        plt.plot(id_closest_to_one, dk_closest_to_der - corr_factor, ".", label="Approx. of optimal epsilon")
-        plt.legend()
-        plt.show()
+        # plt.plot(x, y, ".", label='Dmax average')
+        # plt.plot(x, y_fit, label='Fitting function')
+        # plt.plot(y_der / 10, label='Derivative values')
+        # plt.xticks(x)
+        # plt.title("Average of maximum distances by number of neighbors")
+        # plt.xlabel("Number of neighbors (K)")
+        # plt.ylabel("Average of maximum distances (Dmax)")
+        # plt.plot(id_closest_to_one, dk_closest_to_der - corr_factor, ".", label="Approx. of optimal epsilon")
+        # plt.legend()
+        # plt.show()
 
         self.opt_epsilon = dk_closest_to_der
         return dk_closest_to_der
@@ -341,6 +341,7 @@ if __name__ == "__main__" :
 
     arguments = parser.parse_args()
     if not 0 < arguments.quantity <= 1:
+        logging.warning("The given quantity of points should be between 0 and 1. Taking default value 0.1 instead.")
         arguments.quantity = 0.1
 
     # Executes the pathfinding algorithm
