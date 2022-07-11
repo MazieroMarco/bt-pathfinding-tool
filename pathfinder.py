@@ -7,6 +7,7 @@ import numpy as np
 from datetime import datetime
 import copy
 import scipy.spatial
+from scipy.interpolate import InterpolatedUnivariateSpline
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
@@ -122,7 +123,7 @@ class PointCloud:
 
         # Config values
         k = 20  # The number of neighbors to evaluate (the bigger, the slower)
-        deriv_goal = 0.01  # The ideal value for the derivative
+        deriv_goal = 1  # The ideal value for the derivative
         corr_factor = -0.05  # The correction factor to apply to the final value
 
         # Calculates maximum distances average for KNN neighbors
@@ -142,25 +143,36 @@ class PointCloud:
         fit_coef = np.polyfit(x, y, 2)
         y_fit = np.polyval(fit_coef, x)
 
-        # Calculates the derivative values of the fitting function
-        y_der = np.diff(y_fit) / np.diff(x)
-        x_der = np.array([])
-        for i in range(len(y_der)):
-            x_temp = (x[i + 1] + x[i]) / 2
-            x_der = np.append(x_der, x_temp)
+        # Get a function that evaluates the linear spline at any x
+        f = InterpolatedUnivariateSpline(x, y_fit, k=1)
+
+        # Get a function that evaluates the derivative of the linear spline at any x
+        dfdx = f.derivative()
+
+        # Evaluate the derivative dydx at each x location...
+        y_der = np.array([])
+        for v in x:
+            y_der = np.append(y_der, dfdx(v))
+        y_der = y_der * 100
 
         # Finds the value where the derivative is closest to the derivative goal
-        difference_array = np.absolute(y_der - deriv_goal)  # Finds the closest value to 0.01
+        difference_array = np.absolute(y_der - deriv_goal)  # Finds the closest value to ideal value for derivative
         id_closest_to_one = difference_array.argmin()
 
         # Retrieves the dk value where the derivative is close to the derivative goal
         dk_closest_to_der = y_fit[id_closest_to_one] + corr_factor
 
         # Plotting for visual observation and debug
-        # plt.plot(x, y, '.')
-        # plt.plot(x, y_fit)
-        # plt.plot(x_der, y_der)
-        # plt.show()
+        plt.plot(x, y, ".", label='Dmax average')
+        plt.plot(x, y_fit, label='Fitting function')
+        plt.plot(y_der / 10, label='Derivative values')
+        plt.xticks(x)
+        plt.title("Average of maximum distances by number of neighbors")
+        plt.xlabel("Number of neighbors (K)")
+        plt.ylabel("Average of maximum distances (Dmax)")
+        plt.plot(id_closest_to_one, dk_closest_to_der - corr_factor, ".", label="Approx. of optimal epsilon")
+        plt.legend()
+        plt.show()
 
         self.opt_epsilon = dk_closest_to_der
         return dk_closest_to_der
@@ -182,7 +194,7 @@ class PointCloud:
             pos = np.array([t[0], t[1], t[2]])
             pos[0] += (random.random() - 0.5) * 150  # X
             pos[1] += (random.random() - 0.5) * 150  # Y
-            pos[2] += random.random() * 60  # Z
+            pos[2] += random.random() * 45  # Z
 
             # Lerps through the vector between position and target
             v1 = Vector((pos[0], pos[1], pos[2]))
