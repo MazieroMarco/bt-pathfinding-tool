@@ -33,7 +33,7 @@ class PointCloud:
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     colors: np.ndarray  # The list of points colors shaped like [[r,g,b],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
-    opt_epsilon: float  # Optimal epsilon value computed by the algorithm
+    epsilon: float  # Given epsilon value
     clusters_computed: bool  # Boolean that tells if the clusters where computed by the algorithm
     normalized: np.ndarray
 
@@ -54,7 +54,7 @@ class PointCloud:
             raise ValueError("points_proportion must be between 0 and 1")
 
         # Initiates the clusters boolean and epsilon value
-        self.opt_epsilon = None
+        self.epsilon = None
         self.clusters_computed = False
 
         # Reads the LAS file
@@ -96,19 +96,19 @@ class PointCloud:
         extracted_points = reader.xyz[rnd_indices]
         extracted_colors = reader.points.array[rnd_indices][["red", "green", "blue"]]
         #extracted_colors = np.array([[r * 256 // 2**16, g * 256 // 2**16, b * 256 // 2**16] for r, g, b in extracted_colors])
-        extracted_colors = np.array([[r / 2**16, g / 2**16, b / 2**16] for r, g, b in extracted_colors])
+        extracted_colors = np.array([[r * 255 / 2**16, g * 255 / 2**16, b * 255 / 2**16] for r, g, b in extracted_colors])
 
         # Normalizes the RGB values according to XYZ values
         x_max = reader.header.x_max
         y_max = reader.header.y_max
         z_max = reader.header.z_max
-        xyz_max = np.average([x_max, y_max, z_max])
-        rgb_max = 255  # Maximum color value
-        ratio = xyz_max / rgb_max
-        #normalized_rgb = [[r * ratio, g * ratio, b * ratio] for r, g, b in extracted_colors]
-        normalized_xyz = [[x / x_max, y / y_max, z / z_max] for x, y, z in extracted_points]
-        self.normalized = np.concatenate((normalized_xyz, extracted_colors), axis=1)
-        print(self.normalized[:, [0, 1, 2]])
+        normalized_rgb = np.array([[r * x_max / 255, g * y_max / 255, b * z_max / 255] for r, g, b in extracted_colors])
+        #normalized_xyz = [[x / x_max, y / y_max, z / z_max] for x, y, z in extracted_points]
+
+        #self.normalized = zip(extracted_points, normalized_rgb)
+        #self.normalized = np.array([[xyz[0] * rgb[0], xyz[1] * rgb[1], xyz[2] * rgb[2]] for (xyz, rgb) in self.normalized])
+        self.normalized = np.concatenate((extracted_points, normalized_rgb), axis=1)
+        print(self.normalized)
 
         logging.info(f"Successfully extracted {self.nb_points} points from file {self.filename} !")
         return extracted_points, extracted_colors
@@ -151,17 +151,20 @@ class PointCloud:
         logging.info(f"{nb_clusters} points of interest have been computed.")
         return sorted_centers
 
+    def set_epsilon(self, epsilon):
+        self.epsilon = epsilon
+
     def get_epsilon(self):
         logging.info(f"Finding the best parameters for clustering. This may take a while ...")
 
-        if self.opt_epsilon is not None:
-            return self.opt_epsilon
+        if self.epsilon is not None:
+            return self.epsilon
 
         # Config values
-        k = 20  # The number of neighbors to evaluate (the bigger, the slower)
-        data = self.normalized[:, [0, 1, 2]]
+        k = 40  # The number of neighbors to evaluate (the bigger, the slower)
+        data = np.concatenate((self.points, self.colors), axis=0)
         deriv_goal = 1  # The ideal value for the derivative
-        corr_factor = -0.05  # The correction factor to apply to the final value
+        corr_factor = 0.95  # The correction factor to apply to the final value
 
         # Calculates maximum distances average for KNN neighbors
         dks = np.array([0])  # The first 0 value corresponds to the dk when k = 0 (no neighbors)
@@ -196,21 +199,20 @@ class PointCloud:
         id_closest_to_one = difference_array.argmin()
 
         # Retrieves the dk value where the derivative is close to the derivative goal
-        dk_closest_to_der = y_fit[id_closest_to_one] + corr_factor
+        dk_closest_to_der = y_fit[id_closest_to_one]# * corr_factor
 
         # Plotting for visual observation and debug
-        # plt.plot(x, y, ".", label='Dmax average')
-        # plt.plot(x, y_fit, label='Fitting function')
-        # plt.plot(y_der / 10, label='Derivative values')
-        # plt.xticks(x)
-        # plt.title("Average of maximum distances by number of neighbors")
-        # plt.xlabel("Number of neighbors (K)")
-        # plt.ylabel("Average of maximum distances (Dmax)")
-        # plt.plot(id_closest_to_one, dk_closest_to_der - corr_factor, ".", label="Approx. of optimal epsilon")
-        # plt.legend()
-        # plt.show()
+        plt.plot(x, y, ".", label='Dmax average')
+        plt.plot(x, y_fit, label='Fitting function')
+        plt.plot(y_der / 10, label='Derivative values')
+        plt.xticks(x)
+        plt.title("Average of maximum distances by number of neighbors")
+        plt.xlabel("Number of neighbors (K)")
+        plt.ylabel("Average of maximum distances (Dmax)")
+        plt.plot(id_closest_to_one, dk_closest_to_der - corr_factor, ".", label="Approx. of optimal epsilon")
+        plt.legend()
+        plt.show()
 
-        self.opt_epsilon = dk_closest_to_der
         return dk_closest_to_der
 
     def __get_camera_positions(self, camera_targets: np.ndarray) -> np.ndarray:
@@ -243,7 +245,7 @@ class PointCloud:
 
                 # Uses KNN to check if there are points around
                 distance, _ = tree.query(interp_pos)
-                if distance < self.opt_epsilon * 5:
+                if distance < self.epsilon:
                     is_occlusion = True
                     break
 
@@ -276,6 +278,9 @@ class PointCloud:
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
         :return: Numpy array containing the cluster labels for each given input point
         """
+        # Saves the given epsilon value
+        self.epsilon = epsilon
+
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} with epsilon of {epsilon} ...")
         self.clusters = DBSCAN(eps=epsilon, algorithm='kd_tree', n_jobs=-1).fit_predict(self.normalized)
@@ -377,6 +382,7 @@ if __name__ == "__main__" :
     parser.add_argument("--output", "-o", type=dir_path, metavar="DIR", default="./pathfinder_output.json", help="The output directory for the generated JSON file")
     parser.add_argument("--poi", "-p", type=int, metavar="N", default=5, help="The amount of points of interest to output")
     parser.add_argument("--quantity", "-q", type=float, metavar="N", default=0.1, help="The proportion of points to keep in the working data sample [0 < q < 1]. Warning, a big number slows down the algorithm.")
+    parser.add_argument("--epsilon", "-e", type=float, metavar="N", default=-1, help="The epsilon parameter used for the data clustering. This parameter is approximated if no value is given.")
 
     arguments = parser.parse_args()
     if not 0 < arguments.quantity <= 1:
@@ -385,9 +391,12 @@ if __name__ == "__main__" :
 
     # Executes the pathfinding algorithm
     pc = PointCloud(filename=arguments.input, points_proportion=arguments.quantity)
-    epsilon = pc.get_epsilon()
-    pc.apply_dbscan(epsilon)
-    
+
+    if arguments.epsilon <= 0.0:
+        arguments.epsilon = pc.get_epsilon()
+
+    pc.apply_dbscan(arguments.epsilon)
+
     pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
 
     img = pc.generate_debug_image(2560, 1440, 5)
