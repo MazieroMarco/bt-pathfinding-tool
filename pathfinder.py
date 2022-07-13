@@ -387,11 +387,8 @@ if __name__ == "__main__" :
     pc = PointCloud(filename=arguments.input, points_proportion=arguments.quantity)
     epsilon = pc.get_epsilon()
     pc.apply_dbscan(epsilon)
-<<<<<<< HEAD
+    
     pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
 
     img = pc.generate_debug_image(2560, 1440, 5)
     img.show()
-=======
-    pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
->>>>>>> 08caeab92b0c94211f9ed250e1c8f11b170a8b3b
