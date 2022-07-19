@@ -5,6 +5,7 @@ import laspy
 import logging
 import numpy as np
 from datetime import datetime
+import time
 import copy
 import scipy.spatial
 from scipy.interpolate import InterpolatedUnivariateSpline
@@ -206,7 +207,7 @@ class PointCloud:
 
                 # Uses KNN to check if there are points around
                 distance, _ = tree.query(interp_pos)
-                if distance < self.epsilon * 5:
+                if distance < self.epsilon * 3:
                     is_occlusion = True
                     break
 
@@ -323,6 +324,9 @@ class PointCloud:
 
 
 if __name__ == "__main__" :
+    # Excecution time calculation
+    start_time = time.time()
+
     def dir_path(s):
         """
         Ensures the given string is a valid file path
@@ -357,3 +361,6 @@ if __name__ == "__main__" :
     pc.apply_dbscan(arguments.epsilon)
 
     pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
+
+    # Loggs exec time
+    logging.info(f"Algorithm total execution time: {(time.time() - start_time)} seconds")
