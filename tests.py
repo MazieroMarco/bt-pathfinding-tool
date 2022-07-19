@@ -4,12 +4,12 @@ from pathfinder import PointCloud
 import time
 import logging
 
-POINT_CLOUD_FILE = 'data/Romont 3D_group1_densified_point_cloud.las'
+POINT_CLOUD_FILE = 'data/Cadastre_group1_densified_point_cloud.las'
 
 
-def perf_time_density():
+def perf_time_sample_size():
     logging.disable()
-    x = np.arange(0.01, 0.2, 0.2)
+    x = np.arange(0.01, 0.2, 0.01)
     y = np.array([])
 
     for i in x:
@@ -25,4 +25,19 @@ def perf_time_density():
     plt.plot(x, y, ".")
     plt.show()
 
-perf_time_density()
+
+def perf_clustering_sample_size():
+    logging.disable()
+    x = np.arange(0.01, 0.2, 0.01)
+    y = np.array([])
+
+    for i in x:
+        pc = PointCloud(filename=POINT_CLOUD_FILE, points_proportion=i)
+        e = pc.get_epsilon()
+        pc.apply_dbscan(e)
+        img = pc.generate_debug_image(1000, 1000, 0.5)
+        img.save(f'test/perf_clustering_sample_size/img_{int(i*100)}.png')
+        print(f"Computed clustering image img_{int(i*100)}.png")
+
+
+perf_clustering_sample_size()

@@ -21,12 +21,7 @@ from mathutils import Vector
 class PointCloud:
     filename: str  # The name of the given LAS file
     nb_points: int  # The amount of points in the dataset
-    scale_x: int  # The point cloud scale on the X axis
-    scale_y: int  # The point cloud scale on the Y axis
-    scale_z: int  # The point cloud scale on the Z axis
-    offset_x: int  # The position offset of the point cloud on the X axis
-    offset_y: int  # The position offset of the point cloud on the Y axis
-    offset_z: int  # The position offset of the point cloud on the Z axis
+    header: laspy.LasHeader  # The metadata of the point cloud dataset
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
     epsilon: float  # Optimal epsilon value computed by the algorithm
@@ -55,12 +50,7 @@ class PointCloud:
         # Reads the LAS file
         with laspy.open(filename) as file:
             self.nb_points = int(file.header.point_count * points_proportion)
-            self.scale_x = file.header.x_scale
-            self.scale_y = file.header.y_scale
-            self.scale_z = file.header.z_scale
-            self.offset_x = file.header.x_offset * self.scale_x
-            self.offset_y = file.header.x_offset * self.scale_y
-            self.offset_z = file.header.x_offset * self.scale_z
+            self.header = file.header
             self.points = self.__extract_points(file.read())
             file.close()
 
@@ -272,7 +262,7 @@ class PointCloud:
 
         logging.info(f"Camera targets and positions were saved in file {json_output_file}")
 
-    def generate_debug_image(self, width: int, height: int, zoom_level: int) -> Image:
+    def generate_debug_image(self, width: int, height: int, zoom_level: float) -> Image:
         """
         Generates an output image
         :param width: The output image width
@@ -309,8 +299,8 @@ class PointCloud:
             if self.clusters[i] == -1:
                 continue
 
-            x = int(p[0] * zoom_level) + width / 2 - int(self.offset_x)
-            y = int(p[1] * zoom_level) + height / 2 - int(self.offset_y)
+            x = int((p[0] + self.header.x_min) * zoom_level * width / (self.header.x_max + self.header.x_min))  # int(p[0] * zoom_level) + width / 2 - int(self.offset_x)
+            y = int((p[1] + self.header.y_min) * zoom_level * height / (self.header.y_max + self.header.y_min))  # int(p[1] * zoom_level) + height / 2 - int(self.offset_y)
 
             # Gets the cluster color
             r, g, b = generate_color(self.clusters[i])
