@@ -299,8 +299,8 @@ class PointCloud:
             if self.clusters[i] == -1:
                 continue
 
-            x = int((p[0] + self.header.x_min) * zoom_level * width / (self.header.x_max + self.header.x_min))  # int(p[0] * zoom_level) + width / 2 - int(self.offset_x)
-            y = int((p[1] + self.header.y_min) * zoom_level * height / (self.header.y_max + self.header.y_min))  # int(p[1] * zoom_level) + height / 2 - int(self.offset_y)
+            x = int(p[0] * zoom_level) + width / 2 - int(self.header.x_offset)
+            y = int(p[1] * zoom_level) + height / 2 - int(self.header.y_offset)
 
             # Gets the cluster color
             r, g, b = generate_color(self.clusters[i])
@@ -352,5 +352,5 @@ if __name__ == "__main__" :
 
     pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
 
-    # Loggs exec time
+    # Logging exec time
     logging.info(f"Algorithm total execution time: {(time.time() - start_time)} seconds")
