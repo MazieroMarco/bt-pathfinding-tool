@@ -5,6 +5,8 @@
 This is a python tool that uses data clustering techniques to identify relevant locations inside Lidar point cloud data.
 The output is a JSON file containing targets in the shape of coordinates and positions that the camera must go in order to have a clear view over the targets.
 
+It was developed as part of my Bachelor Thesis work for my HES-SO B.S. in Computer Science & Engineering, oriented in Software Development in HEIG-VD, Switzerland.
+
 This tool can be useful in application with [this adaptation of the Potree tool](https://github.com/MazieroMarco/bt-visualization-tool) that allows the import of such JSON files and the visualization of camera paths.
 
 ### Built With
