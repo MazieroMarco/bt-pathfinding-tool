@@ -1,31 +1,33 @@
-import os
-import pathlib
-import random
-import laspy
-import logging
-import numpy as np
-from datetime import datetime
-import copy
-import scipy.spatial
-from scipy.interpolate import InterpolatedUnivariateSpline
-from sklearn.neighbors import NearestNeighbors
-from sklearn.cluster import DBSCAN
-from PIL import Image, ImageDraw
-from matplotlib import pyplot as plt
-import json
 import argparse
+import json
+import logging
+import os
+import random
+import time
+from datetime import datetime
+
+import laspy
+import numpy as np
+import scipy.spatial
+from PIL import Image, ImageDraw
 from mathutils import Vector
+from scipy.interpolate import InterpolatedUnivariateSpline
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+
+
+# from matplotlib import pyplot as plt
 
 
 class PointCloud:
+    """
+    This class represents a processed point cloud las file
+    Clustering on the data geometry can be applied to extract relevant clusters
+    """
+
     filename: str  # The name of the given LAS file
     nb_points: int  # The amount of points in the dataset
-    scale_x: int  # The point cloud scale on the X axis
-    scale_y: int  # The point cloud scale on the Y axis
-    scale_z: int  # The point cloud scale on the Z axis
-    offset_x: int  # The position offset of the point cloud on the X axis
-    offset_y: int  # The position offset of the point cloud on the Y axis
-    offset_z: int  # The position offset of the point cloud on the Z axis
+    header: laspy.LasHeader  # The metadata of the point cloud dataset
     points: np.ndarray  # The list of points shaped like [[x,y,z],...]
     clusters: np.ndarray  # The list of clusters found in the dataset
     epsilon: float  # Optimal epsilon value computed by the algorithm
@@ -37,8 +39,6 @@ class PointCloud:
         :param filename: The name of the point cloud file to read
         :param points_proportion: The percentage (between 0 and 1) of points to read in the dataset
         """
-        # Setup logging config
-        logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
         #  Saves the filename
         self.filename = filename
@@ -47,19 +47,13 @@ class PointCloud:
         if 0 > points_proportion > 1:
             raise ValueError("points_proportion must be between 0 and 1")
 
-        # Initiates the clusters boolean and epsilon value
-        self.epsilon = None
+        # Initiates the clusters boolean
         self.clusters_computed = False
 
         # Reads the LAS file
         with laspy.open(filename) as file:
             self.nb_points = int(file.header.point_count * points_proportion)
-            self.scale_x = file.header.x_scale
-            self.scale_y = file.header.y_scale
-            self.scale_z = file.header.z_scale
-            self.offset_x = file.header.x_offset * self.scale_x
-            self.offset_y = file.header.x_offset * self.scale_y
-            self.offset_z = file.header.x_offset * self.scale_z
+            self.header = file.header
             self.points = self.__extract_points(file.read())
             file.close()
 
@@ -115,11 +109,13 @@ class PointCloud:
         logging.info(f"{nb_clusters} points of interest have been computed.")
         return sorted_centers
 
-    def get_epsilon(self):
+    def get_epsilon(self) -> float:
+        """
+        Computes an approximation of the epsilon value for the DBSCAN algorithm
+        Warning! This method is highly demanding and can take time to finish!
+        :return: The approximated epsilon value
+        """
         logging.info(f"Finding the best parameters for clustering. This may take a while ...")
-
-        if self.epsilon is not None:
-            return self.epsilon
 
         # Config values
         k = 20  # The number of neighbors to evaluate (the bigger, the slower)
@@ -136,7 +132,7 @@ class PointCloud:
         dks = np.append(dks, averages)  # Appends the distances to the dks array
 
         # Set up the values
-        x = np.array(range(k+1))  # X-axis contains the K values (0 - K)
+        x = np.array(range(k + 1))  # X-axis contains the K values (0 - K)
         y = dks  # Y-axis contains the dk averages for each K value
 
         # Calculates the fitting function of dks
@@ -162,7 +158,9 @@ class PointCloud:
         # Retrieves the dk value where the derivative is close to the derivative goal
         dk_closest_to_der = y_fit[id_closest_to_one] + corr_factor
 
-        # Plotting for visual observation and debug
+        # The lines below can be used as debug to output a graphic
+        # representing the curve of Dmax averages over K values
+
         # plt.plot(x, y, ".", label='Dmax average')
         # plt.plot(x, y_fit, label='Fitting function')
         # plt.plot(y_der / 10, label='Derivative values')
@@ -176,7 +174,13 @@ class PointCloud:
 
         return dk_closest_to_der
 
-    def __get_camera_positions(self, camera_targets: np.ndarray) -> np.ndarray:
+    def __get_camera_positions(self, camera_targets: np.ndarray, epsilon: float) -> np.ndarray:
+        """
+        Computes the positions the camera will go when looking at the targets
+        :param camera_targets: The targets the camera will have to look at
+        :param epsilon: The epsilon best value (Distance max for two points to be in same cluster)
+        :return: A numpy array containing one position per given target
+        """
         random.seed(datetime.now().timestamp())
 
         positions = np.empty((0, 3))  # The array containing the final camera positions
@@ -206,7 +210,7 @@ class PointCloud:
 
                 # Uses KNN to check if there are points around
                 distance, _ = tree.query(interp_pos)
-                if distance < self.epsilon * 5:
+                if distance < epsilon * 3:
                     is_occlusion = True
                     break
 
@@ -234,13 +238,12 @@ class PointCloud:
         if not self.clusters_computed:
             raise RuntimeError("The clusters are not computed, please apply the clustering algorithm.")
 
-    def apply_dbscan(self, epsilon) -> None:
+    def apply_dbscan(self, epsilon: float) -> None:
         """
         Applies the DBSCAN data clustering algorithm to identify clusters in the dataset
+        :param epsilon: The best value for the epsilon parameter (The max distance for two points to be in same cluster)
         :return: Numpy array containing the cluster labels for each given input point
         """
-        # Saves the given epsilon value
-        self.epsilon = epsilon
 
         # Applies DBSCAN on the points
         logging.info(f"Starting DBSCAN clustering algorithm on {self.filename} with epsilon of {epsilon} ...")
@@ -248,9 +251,11 @@ class PointCloud:
         self.clusters_computed = True
         logging.info("Successfully computed DBSCAN algorithm. The clusters are saved in memory.")
 
-    def write_path_output(self, json_output_file: str, nb_points_of_interest=5):
+    def write_path_output(self, json_output_file: str, epsilon: float, nb_points_of_interest: int = 5) -> Image:
         """
         Writes an JSON output file with the camera targets and positions that can be used in a visualization tool
+        :param epsilon: The best value possible for the epsilon parameter
+                        (The distance between points for them to be in the same cluster)
         :param json_output_file: The name of the output file
         :param nb_points_of_interest: The number of wanted targets
         """
@@ -258,7 +263,7 @@ class PointCloud:
         self.__verify_clusters_computed()
 
         targets = self.__get_camera_targets(nb_points_of_interest)
-        positions = self.__get_camera_positions(targets)
+        positions = self.__get_camera_positions(targets, epsilon)
 
         # Defines the dictionary object with positions and targets
         data = {
@@ -271,13 +276,13 @@ class PointCloud:
 
         logging.info(f"Camera targets and positions were saved in file {json_output_file}")
 
-    def generate_debug_image(self, width: int, height: int, zoom_level: int) -> Image:
+    def generate_debug_image(self, width: int, height: int, zoom_level: float) -> Image:
         """
-        Generates an output image
+        Generates an output image representing a top view of the scene clustering
         :param width: The output image width
         :param height: The output image height
         :param zoom_level: The zoom level for debug image generation
-        :return: None
+        :return: The created image
         """
 
         # Checks if clusters where computed
@@ -290,12 +295,12 @@ class PointCloud:
             :return:
             """
             random.seed(seed)
-            r = random.randint(0, 255)
+            red = random.randint(0, 255)
             random.seed(seed + 1)
-            g = random.randint(0, 255)
+            grn = random.randint(0, 255)
             random.seed(seed + 2)
-            b = random.randint(0, 255)
-            return r, g, b
+            blu = random.randint(0, 255)
+            return red, grn, blu
 
         # Creates a 2D picture
         logging.info(f"Creating a new picture of size {width}x{height} px ...")
@@ -308,8 +313,8 @@ class PointCloud:
             if self.clusters[i] == -1:
                 continue
 
-            x = int(p[0] * zoom_level) + width / 2 - int(self.offset_x)
-            y = int(p[1] * zoom_level) + height / 2 - int(self.offset_y)
+            x = int(p[0] * zoom_level) + width / 2 - int(self.header.x_offset)
+            y = int(p[1] * zoom_level) + height / 2 - int(self.header.y_offset)
 
             # Gets the cluster color
             r, g, b = generate_color(self.clusters[i])
@@ -322,7 +327,14 @@ class PointCloud:
         return output_img
 
 
-if __name__ == "__main__" :
+if __name__ == "__main__":
+    # Execution time calculation
+    start_time = time.time()
+
+    # Setup logging config
+    logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+
+
     def dir_path(s):
         """
         Ensures the given string is a valid file path
@@ -334,19 +346,45 @@ if __name__ == "__main__" :
         else:
             raise NotADirectoryError(s)
 
+
     # Sets up the arguments parser
-    parser = argparse.ArgumentParser(description="Finds interesting locations and a camera path inside a given LAS point cloud data file.")
-    parser.add_argument("input", type=dir_path, metavar="INPUT", help="The path of the input LAS data file")
-    parser.add_argument("--output", "-o", type=dir_path, metavar="DIR", default="./pathfinder_output.json", help="The output directory for the generated JSON file")
-    parser.add_argument("--poi", "-p", type=int, metavar="N", default=5, help="The amount of points of interest to output")
-    parser.add_argument("--quantity", "-q", type=float, metavar="N", default=0.1, help="The proportion of points to keep in the working data sample [0 < q < 1]. Warning, a big number slows down the algorithm.")
-    parser.add_argument("--epsilon", "-e", type=float, metavar="N", default=-1, help="The epsilon parameter used for the data clustering. This parameter is approximated if no value is given.")
+    parser = argparse.ArgumentParser(description="Finds interesting locations and a camera path "
+                                                 "inside a given LAS point cloud data file.")
+    parser.add_argument("input",
+                        type=dir_path,
+                        metavar="INPUT",
+                        help="The path of the input LAS data file")
+    parser.add_argument("--output", "-o",
+                        metavar="DIR",
+                        default="./pathfinder_output.json",
+                        help="The output directory for the generated JSON file")
+    parser.add_argument("--poi", "-p",
+                        type=int, metavar="N",
+                        default=5,
+                        help="The amount of points of interest to output")
+    parser.add_argument("--quantity", "-q",
+                        type=float,
+                        metavar="N",
+                        default=0.1,
+                        help="The proportion of points to keep in the working data sample [0 < q < 1]. "
+                             "Warning, a big number slows down the algorithm.")
+    parser.add_argument("--epsilon", "-e",
+                        type=float,
+                        metavar="N",
+                        default=-1,
+                        help="The epsilon parameter used for the data clustering. "
+                             "This parameter is approximated if no value is given.")
 
     arguments = parser.parse_args()
 
     if not 0 < arguments.quantity <= 1:
         logging.warning("The given quantity of points should be between 0 and 1. Taking default value 0.1 instead.")
         arguments.quantity = 0.1
+
+    if not 1 < arguments.poi <= 50:
+        logging.warning(
+            "The amount of desired points of interest should be between 1 and 50. Computing only 5 points of interest.")
+        arguments.poi = 5
 
     # Executes the pathfinding algorithm
     pc = PointCloud(filename=arguments.input, points_proportion=arguments.quantity)
@@ -356,4 +394,9 @@ if __name__ == "__main__" :
 
     pc.apply_dbscan(arguments.epsilon)
 
-    pc.write_path_output(arguments.output, nb_points_of_interest=arguments.poi)
+    pc.write_path_output(json_output_file=arguments.output,
+                         epsilon=arguments.epsilon,
+                         nb_points_of_interest=arguments.poi)
+
+    # Logging exec time
+    logging.info(f"Algorithm total execution time: {(time.time() - start_time)} seconds")
