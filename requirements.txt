@@ -1,0 +1,7 @@
+laspy==2.1.2
+mathutils==2.81.2
+matplotlib==3.2.1
+numpy==1.23.0
+Pillow==9.2.0
+scikit_learn==1.1.1
+scipy==1.8.1
