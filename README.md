@@ -59,7 +59,7 @@ Then you must install the required libraries to be able to use the script proper
    
  * Run simple clustering with custom params (10 targets, 0.4% data sample size, custom epsilon, custom output)
    ```sh
-   python pathfinder.py my_file.las -o ./output.json -p 10 -q 0.4
+   python pathfinder.py my_file.las -o ./output.json -p 10 -q 0.4 -e 0.9
    ```
    
  More details are avilable in the comand line tool help menu by using the `-h` option.
