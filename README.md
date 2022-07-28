@@ -10,7 +10,7 @@ THe output is a JSON file containing targets in the shape of coordinates and pos
 This section should list any major frameworks/libraries used to bootstrap your project. Leave any add-ons/plugins for the acknowledgements section. Here are a few examples.
 
 * [![Python3][Python3]][Python3-url]
-* [![Scikitlearn][Scikitlearn]][Scikitlarn-url]
+* [![Scikitlearn][Scikitlearn]][Scikitlearn-url]
 * [![JSON][JSON]][JSON-url]
 * [![Numpy][Numpy]][Numpy-url]
 * [![laspy][laspy]][laspy-url]
@@ -63,7 +63,7 @@ Use this space to show useful examples of how a project can be used. Additional 
  More details are avilable in the comand line tool help menu by using the `-h` option.
  
  * Help menu
-    ```sh
+    ```
    python pathfinder.py -h
    usage: pathfinder.py [-h] [--output DIR] [--poi N] [--quantity N] [--epsilon N] INPUT
 
