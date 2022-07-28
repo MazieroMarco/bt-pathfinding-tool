@@ -35,7 +35,7 @@ Then you must install the required libraries to be able to use the script proper
 
 1. Clone the repo
    ```sh
-   git clone https://github.com/MazieroMarco/bt-pathfinding-tool
+   git clone https://github.com/MazieroMarco/bt-pathfinding-tool.git
    ```
 2. Install python packages
    ```sh
