@@ -52,8 +52,6 @@ Then you must install the required libraries to be able to use the script proper
 
 ## Usage
 
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
-
 * Run simple clustering with default params (5 targets, 0.1% data sample size)
    ```sh
    python pathfinder.py my_file.las
