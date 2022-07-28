@@ -4,7 +4,7 @@ from pathfinder import PointCloud
 import time
 import logging
 
-POINT_CLOUD_FILE = 'data/construction_site.las'
+POINT_CLOUD_FILE = '../data/construction_site.las'
 
 
 def perf_time_sample_size():
