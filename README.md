@@ -26,7 +26,7 @@ This project is a very simple python file that can be executed to generate a JSO
 
 ### Prerequisites
 
-To be sure everything is going to work properly, be sure tou have Python version >= 3.8
+To be sure everything is going to work properly, be sure you have Python version >= 3.8
 
 * Get python version
   ```sh
